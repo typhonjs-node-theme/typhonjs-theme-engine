@@ -1,6 +1,10 @@
 import es6Template   from 'es6-template';
 import PostCSS       from 'typhonjs-postcss';
 
+import cssnano       from 'cssnano';
+import cssnext       from 'postcss-cssnext';
+import combineDup    from 'postcss-combine-duplicated-selectors';
+
 /**
  * Provides an orchestration module / plugin for CSS theme construction.
  */
@@ -37,28 +41,48 @@ export default class ThemeEngine
     * @param {string|Array<string>} [files='styles.css'] - A string or array of strings for CSS files associated with
     *                                                      a theme.
     *
-    * @param {Array<object>}        [processors=[{ name: 'postcss-cssnext' }]] - PostCSS processors.
+    * @param {boolean|object}       [map=true] - Enables source map tracking; see full PostCSS source map options.
+    *
+    * @param {Array<object>}        [processors] - Array of PostCSS processors.
     *
     * @param {boolean}              [silent=false] - When true any logging is skipped.
+    *
+    * @param {boolean}              [debug=false] - When true default processors `postcss-combine-duplicated-selectors`
+    *                                               and `cssnano` PostCSS processors are disabled.
     */
-   async createTheme({ files = 'styles.css', processors = [{ name: 'postcss-cssnext' }], silent = false } = {})
+   async createTheme({ files = 'styles.css', map = true, processors = void 0, silent = false, debug = false } = {})
    {
       if (!Array.isArray(files) && typeof files !== 'string')
       {
          throw new TypeError(`'files' is not a 'string' or 'array'.`);
       }
 
+      // Enable default processors if none are supplied.
+      if (typeof processors === 'undefined' || processors === null)
+      {
+         const cssnextOptions = map === true ? { sourceMap: 'inline' } : {};
+         const cssnanoOptions = { autoprefixer: false };
+
+         processors = [{ instance: cssnext(cssnextOptions) }];
+
+         if (!debug)
+         {
+            processors.push({ instance: combineDup });
+            processors.push({ instance: cssnano(cssnanoOptions) });
+         }
+      }
+
       if (!Array.isArray(processors)) { throw new TypeError(`'processors' is not an 'array'.`); }
 
       if (typeof files === 'string')
       {
-         this._postcss.create({ name: files, to: files, processors, silent });
+         this._postcss.create({ name: files, to: files, map, processors, silent });
       }
       else if (Array.isArray(files))
       {
          for (const entry of files)
          {
-            this._postcss.create({ name: entry, to: entry, processors, silent });
+            this._postcss.create({ name: entry, to: entry, map, processors, silent });
          }
       }
    }
@@ -114,8 +138,16 @@ export default class ThemeEngine
       }
       else
       {
-         this._eventbus.trigger('log:error',
-          `typhonjs-theme-engine cssAdd: 'themeCSS' is not an 'array'.`);
+         const themeCSSType = typeof themeCSS;
+
+         if (themeCSSType !== 'undefined')
+         {
+            if (!silent)
+            {
+               this._eventbus.trigger('log:error',
+                `typhonjs-theme-engine - cssAdd error: 'themeCSS' is not an 'array'; found: '${themeCSSType}.`);
+            }
+         }
       }
    }
 
